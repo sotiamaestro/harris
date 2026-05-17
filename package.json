@@ -1,5 +1,5 @@
 {
-  "name": "harris-monorepo",
+  "name": "harris-swarm",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -20,9 +20,60 @@
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.4",
+    "@harris/core": "workspace:*",
+    "@harris/codebase": "workspace:*",
+    "@harris/gemini": "workspace:*",
+    "@harris/orchestrator": "workspace:*"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1"
-  }
+  },
+  "description": "Autonomous agent-to-agent swarm framework. Agents do not need humans - they need each other.",
+  "main": "./packages/orchestrator/dist/index.js",
+  "types": "./packages/orchestrator/dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./packages/orchestrator/dist/index.js",
+      "types": "./packages/orchestrator/dist/index.d.ts"
+    },
+    "./core": {
+      "import": "./packages/core/dist/index.js",
+      "types": "./packages/core/dist/index.d.ts"
+    },
+    "./gemini": {
+      "import": "./packages/gemini/dist/index.js",
+      "types": "./packages/gemini/dist/index.d.ts"
+    },
+    "./codebase": {
+      "import": "./packages/codebase/dist/index.js",
+      "types": "./packages/codebase/dist/index.d.ts"
+    }
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "swarm",
+    "gemini",
+    "typescript",
+    "autonomous",
+    "llm",
+    "framework"
+  ],
+  "author": "Harris Robinson",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sotiamaestro/harris.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sotiamaestro/harris/issues"
+  },
+  "homepage": "https://github.com/sotiamaestro/harris#readme",
+  "files": [
+    "packages/*/dist/**",
+    "README.md",
+    "LICENSE"
+  ]
 }

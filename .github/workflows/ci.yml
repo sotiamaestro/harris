@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: |
+          npx tsup packages/core/src/index.ts --format esm --dts --clean --outDir packages/core/dist
+          npx tsup packages/codebase/src/index.ts --format esm --dts --clean --outDir packages/codebase/dist
+          npx tsup packages/gemini/src/index.ts --format esm --dts --clean --outDir packages/gemini/dist
+          npx tsup packages/orchestrator/src/index.ts --format esm --dts --clean --outDir packages/orchestrator/dist
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+  integration:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: |
+          npx tsup packages/core/src/index.ts --format esm --dts --clean --outDir packages/core/dist
+          npx tsup packages/codebase/src/index.ts --format esm --dts --clean --outDir packages/codebase/dist
+          npx tsup packages/gemini/src/index.ts --format esm --dts --clean --outDir packages/gemini/dist
+          npx tsup packages/orchestrator/src/index.ts --format esm --dts --clean --outDir packages/orchestrator/dist
+
+      - name: Integration Tests
+        if: env.GEMINI_API_KEY != ''
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: pnpm test:integration
