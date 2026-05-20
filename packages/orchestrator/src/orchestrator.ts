@@ -14,6 +14,7 @@ import { createMessage, calculateZone, createSnapshot } from "@harris/core";
 import type { GeminiAgent } from "@harris/gemini";
 import { SwarmLifecycleManager } from "./lifecycle.js";
 import { SwarmReporter } from "./reporter.js";
+import { getPlugins } from "./plugins.js";
 
 export interface OrchestratorConfig {
   budget: {
@@ -142,7 +143,7 @@ export class Orchestrator {
 
     let response: AgentResponse;
     try {
-      response = await agent.invoke(message);
+      response = await this.invokeAgent(agent, message);
     } catch (error) {
       this.reporter.reportError(error as Error);
       return null;
@@ -358,7 +359,12 @@ export class Orchestrator {
       { trace_id: traceId, priority: 0 },
     );
 
-    return release.invoke(shutdownMessage);
+    try {
+      return await this.invokeAgent(release, shutdownMessage);
+    } catch (error) {
+      this.reporter.reportError(error as Error);
+      return null;
+    }
   }
 
   private logAudit(message: AgentMessage, response: AgentResponse, startTime: number): void {
@@ -409,5 +415,39 @@ export class Orchestrator {
 
   private collectAllChanges(): FileChange[] {
     return this.accumulatedChanges;
+  }
+
+  private async invokeAgent(agent: GeminiAgent, message: AgentMessage): Promise<AgentResponse> {
+    const plugins = getPlugins();
+    let currentMessage = message;
+
+    for (const plugin of plugins) {
+      if (plugin.hooks?.beforeInvoke) {
+        currentMessage = plugin.hooks.beforeInvoke(currentMessage);
+      }
+    }
+
+    try {
+      let response = await agent.invoke(currentMessage);
+
+      for (const plugin of plugins) {
+        if (plugin.hooks?.afterInvoke) {
+          response = plugin.hooks.afterInvoke(response);
+        }
+      }
+
+      return response;
+    } catch (error) {
+      for (const plugin of plugins) {
+        if (plugin.hooks?.onError) {
+          try {
+            plugin.hooks.onError(error as Error, currentMessage);
+          } catch (e) {
+            // Suppress errors inside plugin error handlers
+          }
+        }
+      }
+      throw error;
+    }
   }
 }

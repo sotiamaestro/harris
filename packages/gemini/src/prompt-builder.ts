@@ -38,5 +38,17 @@ export function buildSystemPrompt(
     prompt += `\n\n=== ROLE SPECIFICATION ===\n\n${rolePrompt}`;
   }
 
+  const globalRegistry = globalThis as Record<string | symbol, unknown>;
+  const plugins = (globalRegistry[Symbol.for("harris.plugins")] as Record<string, unknown>[]) || [];
+  for (const plugin of plugins) {
+    if (plugin.prompts) {
+      const prompts = plugin.prompts as Record<string, () => string>;
+      const customPromptFn = prompts[config.id] || prompts[config.role];
+      if (customPromptFn) {
+        prompt += `\n\n=== PLUGIN PROMPT (${plugin.name}) ===\n\n${customPromptFn()}`;
+      }
+    }
+  }
+
   return prompt;
 }

@@ -3,6 +3,7 @@ import { GeminiAgent } from "@harris/gemini";
 import { LocalCodebaseContext } from "@harris/codebase";
 import { DEFAULT_AGENT_CONFIGS } from "@harris/core";
 import type { Goal, AgentConfig } from "@harris/core";
+import { getPlugins } from "./plugins.js";
 
 export { Orchestrator, type OrchestratorConfig } from "./orchestrator.js";
 export * from "./agent-pool.js";
@@ -10,6 +11,7 @@ export * from "./message-bus.js";
 export * from "./lifecycle.js";
 export * from "./reporter.js";
 export * from "./goal-runner.js";
+export * from "./plugins.js";
 
 export interface HarrisConfig {
   gemini_api_key: string;
@@ -39,19 +41,40 @@ export async function createHarris(config: HarrisConfig) {
 
   const orchestrator = new Orchestrator(orchestratorConfig, codebase);
 
-  const agentCards: AgentConfig[] = Object.entries(DEFAULT_AGENT_CONFIGS).map(([role, cfg]) => ({
+  const defaultAgentCards: AgentConfig[] = Object.entries(DEFAULT_AGENT_CONFIGS).map(([role, cfg]) => ({
     id: `${role}-001`,
     role: cfg.role,
     model: cfg.model,
     capabilities: cfg.capabilities,
   }));
 
+  const plugins = getPlugins();
+  const pluginAgentConfigs: AgentConfig[] = [];
+  for (const plugin of plugins) {
+    if (plugin.agents) {
+      pluginAgentConfigs.push(...plugin.agents);
+    }
+  }
+
+  const allAgentConfigs = [...defaultAgentCards, ...pluginAgentConfigs];
+
   for (const [role, cfg] of Object.entries(DEFAULT_AGENT_CONFIGS)) {
     const agent = new GeminiAgent(
       { ...cfg, id: `${role}-001` },
       {
         apiKey: config.gemini_api_key,
-        peers: agentCards.filter((c) => c.id !== `${role}-001`),
+        peers: allAgentConfigs.filter((c) => c.id !== `${role}-001`),
+      },
+    );
+    orchestrator.registerAgent(agent);
+  }
+
+  for (const agentConfig of pluginAgentConfigs) {
+    const agent = new GeminiAgent(
+      agentConfig,
+      {
+        apiKey: config.gemini_api_key,
+        peers: allAgentConfigs.filter((c) => c.id !== agentConfig.id),
       },
     );
     orchestrator.registerAgent(agent);
