@@ -171,23 +171,31 @@ export class GeminiAgent implements Peer {
     }
 
     if (role === "builder") {
+      const isSubtract =
+        message.context.goal?.toLowerCase().includes("subtract") ||
+        message.action?.toLowerCase().includes("subtract");
+
+      const content = isSubtract
+        ? "export function subtract(a: number, b: number): number {\n  return a - b;\n}"
+        : "export function validateToken(token: string) { return true; }";
+
       return JSON.stringify({
         status: "complete",
         result: {
-          summary: "Implemented the JWT expiration validation.",
+          summary: isSubtract ? "Implemented the subtract function." : "Implemented the JWT expiration validation.",
           changes: [
             {
-              file: message.context.relevant_files[0] || "src/auth.ts",
+              file: message.context.relevant_files[0] || (isSubtract ? "math.ts" : "src/auth.ts"),
               action: "modify",
-              content: "export function validateToken(token: string) { return true; }",
-              reasoning: "Correct expiration verification",
+              content,
+              reasoning: isSubtract ? "Correct subtraction implementation" : "Correct expiration verification",
             },
           ],
         },
         next_actions: [
           {
             invoke: "reviewer",
-            action: "Review token verification changes",
+            action: isSubtract ? "Review subtract modifications" : "Review token verification changes",
             context: {
               goal: message.context.goal,
               relevant_files: message.context.relevant_files,
