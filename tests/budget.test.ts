@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { BudgetManager, calculateZone } from "@harris/core";
+import { BudgetManager, CostTracker, calculateZone } from "@harris/core";
+import { describe, expect, it } from "vitest";
 
 describe("Swarm Budget Management", () => {
   it("should calculate budget zones accurately", () => {
@@ -26,5 +26,45 @@ describe("Swarm Budget Management", () => {
     const updated = manager.getBudgetSnapshot("agent-1");
     expect(updated.consumed).toBe(5000);
     expect(updated.remaining).toBe(95000);
+  });
+});
+
+describe("USD Cost Tracking", () => {
+  it("calculates Gemini model input and output costs separately", () => {
+    const tracker = new CostTracker();
+
+    const entry = tracker.trackCost("gemini-2.5-pro", 1_000_000, 500_000, "architect");
+
+    expect(entry.inputCost).toBe(1.25);
+    expect(entry.outputCost).toBe(5);
+    expect(entry.totalCost).toBe(6.25);
+    expect(tracker.getTotalCost()).toBe(6.25);
+  });
+
+  it("attributes costs by agent and model", () => {
+    const tracker = new CostTracker();
+
+    tracker.trackCost("gemini-2.5-pro", 1_000_000, 100_000, "architect");
+    tracker.trackCost("gemini-2.5-flash", 2_000_000, 1_000_000, "builder");
+    tracker.trackCost("gemini-2.5-flash", 1_000_000, 500_000, "builder");
+
+    const byAgent = tracker.getCostByAgent();
+    expect(byAgent.architect).toBeCloseTo(2.25);
+    expect(byAgent.builder).toBeCloseTo(1.35);
+
+    const breakdown = tracker.getCostBreakdown();
+    expect(breakdown.input_cost).toBeCloseTo(1.7);
+    expect(breakdown.output_cost).toBeCloseTo(1.9);
+    expect(breakdown.total).toBeCloseTo(3.6);
+    expect(breakdown.by_model["gemini-2.5-pro"]).toBeCloseTo(2.25);
+    expect(breakdown.by_model["gemini-2.5-flash"]).toBeCloseTo(1.35);
+  });
+
+  it("rejects negative token counts", () => {
+    const tracker = new CostTracker();
+
+    expect(() => tracker.trackCost("gemini-2.5-flash", -1, 0)).toThrow(
+      "Token counts cannot be negative.",
+    );
   });
 });
