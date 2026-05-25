@@ -335,16 +335,16 @@ export class Orchestrator {
       return this.createBridgeFailureResponse(traceId, parentMessageId, `Child swarm synchronization failed: ${message}`);
     }
 
-    const failedRuns = bridgeRuns.filter((run) => run.result.status === "failed");
-    if (!failedRuns.length) {
+    const blockingRuns = bridgeRuns.filter((run) => run.result.status === "failed" || run.result.status === "partial");
+    if (!blockingRuns.length) {
       return null;
     }
 
-    const failedProjects = failedRuns.map((run) => run.context.target_project).join(", ");
+    const failedProjects = blockingRuns.map((run) => run.context.target_project).join(", ");
     return this.createBridgeFailureResponse(
       traceId,
       parentMessageId,
-      `Child swarm failed for ${failedProjects}. Parent swarm blocked before testing.`,
+      `Child swarm did not complete for ${failedProjects}. Parent swarm blocked before testing.`,
     );
   }
 

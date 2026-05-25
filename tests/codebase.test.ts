@@ -27,6 +27,20 @@ describe("Swarm Codebase Integration", () => {
     expect(file.version.length).toBe(12);
   });
 
+  it("should return fresh content after writing a previously cached file", async () => {
+    const ctx = new LocalCodebaseContext(testRoot);
+    await ctx.initialize();
+
+    const initial = await ctx.read("index.ts");
+    expect(initial.content).toBe("const x = 1;");
+
+    await ctx.write("index.ts", "const x = 2;", "builder-001");
+
+    const updated = await ctx.read("index.ts");
+    expect(updated.content).toBe("const x = 2;");
+    expect(updated.version).not.toBe(initial.version);
+  });
+
   it("should enforce optimistic concurrent writing and detect stale version conflicts", () => {
     const tracker = new VersionTracker();
     tracker.updateVersion("index.ts", "const x = 1;");

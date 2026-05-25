@@ -69,6 +69,7 @@ export class LocalCodebaseContext implements CodebaseContext {
     }
 
     const change = await this.writer.write(path, content, agentId, this.versionTracker);
+    this.reader.invalidate(path);
 
     this.diffEngine.recordDiff(path, before, content, agentId);
     this.attributor.recordModification(path, agentId, "builder", `Modified by ${agentId}`);

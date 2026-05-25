@@ -8,6 +8,7 @@ import type {
   GoalResult,
   SharedContext,
 } from "@harris/core";
+import { createHash } from "node:crypto";
 
 export interface SwarmRunner {
   runGoal(goal: Goal): Promise<GoalResult>;
@@ -87,7 +88,7 @@ export class SwarmBridge {
     const runs: SwarmBridgeRun[] = [];
 
     for (const impact of impacts) {
-      const key = this.createImpactKey(impact);
+      const key = this.createImpactKey(impact, changes);
       if (this.completedImpactKeys.has(key)) {
         continue;
       }
@@ -247,12 +248,21 @@ export class SwarmBridge {
     return value.replace(/\.(?:mjs|cjs|js|jsx|ts|tsx)$/, "");
   }
 
-  private createImpactKey(impact: CrossProjectImpact): string {
+  private createImpactKey(impact: CrossProjectImpact, changes: FileChange[]): string {
+    const relevantChangeHashes = changes
+      .filter((change) => impact.changed_files.includes(change.file))
+      .map((change) => `${change.file}:${change.action}:${this.hashChangeContent(change.content)}`);
+
     return [
       impact.target_project,
       ...impact.changed_files,
       ...impact.importing_files,
       ...impact.matched_imports,
+      ...relevantChangeHashes,
     ].join("|");
+  }
+
+  private hashChangeContent(content: string): string {
+    return createHash("sha256").update(content).digest("hex").slice(0, 12);
   }
 }

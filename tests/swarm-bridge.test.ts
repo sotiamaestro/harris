@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LocalCodebaseContext } from "@harris/codebase";
-import type { AgentMessage, AgentResponse, CrossProjectGoal, Goal, NextAction } from "@harris/core";
+import type { AgentMessage, AgentResponse, CrossProjectGoal, Goal, GoalResult, NextAction } from "@harris/core";
 import { GeminiAgent } from "@harris/gemini";
 import { Orchestrator, SwarmBridge, type OrchestratorConfig } from "@harris/orchestrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -123,11 +123,68 @@ describe("SwarmBridge cross-project orchestration", () => {
     const result = await parent.runGoal(parentGoal());
 
     expect(result.status).toBe("failed");
-    expect(result.summary).toContain("Child swarm failed for project-b");
+    expect(result.summary).toContain("Child swarm did not complete for project-b");
     expect(testerInvoked).not.toHaveBeenCalled();
     expect(result.token_usage.total).toBe(400);
     expect(bridge.completedRuns[0]?.result.status).toBe("failed");
     expect(bridge.completedRuns[0]?.result.token_usage.total).toBe(4321);
+  });
+
+  it("blocks parent testing when a child swarm returns partial status", async () => {
+    const projectA = await createCodebase(projectARoot);
+    const projectB = await createCodebase(projectBRoot);
+    const testerInvoked = vi.fn();
+
+    const childRunner = {
+      runGoal: vi.fn(async (goal: Goal) => goalResult(goal.id, "partial", 4321)),
+    };
+
+    const bridge = new SwarmBridge({
+      parent: { id: "project-a", codebase: projectA, runner: { runGoal: vi.fn() } },
+      children: [{ id: "project-b", codebase: projectB, runner: childRunner }],
+    });
+
+    const parent = new Orchestrator(config, projectA, bridge);
+    registerParentAgents(parent, { onTesterInvoke: testerInvoked });
+
+    const result = await parent.runGoal(parentGoal());
+
+    expect(result.status).toBe("failed");
+    expect(result.summary).toContain("Child swarm did not complete for project-b");
+    expect(testerInvoked).not.toHaveBeenCalled();
+    expect(bridge.completedRuns[0]?.result.status).toBe("partial");
+  });
+
+  it("runs child synchronization again when the same parent file changes again", async () => {
+    const projectA = await createCodebase(projectARoot);
+    const projectB = await createCodebase(projectBRoot);
+    const childRunner = {
+      runGoal: vi.fn(async (goal: Goal) => goalResult(goal.id, "complete", 1234)),
+    };
+
+    const bridge = new SwarmBridge({
+      parent: { id: "project-a", codebase: projectA, runner: { runGoal: vi.fn() } },
+      children: [{ id: "project-b", codebase: projectB, runner: childRunner }],
+    });
+    const firstChange = {
+      file: "src/api.ts",
+      action: "modify" as const,
+      content: "export interface User { id: string; name: string; }\n",
+      reasoning: "API contract now requires name.",
+    };
+    const secondChange = {
+      file: "src/api.ts",
+      action: "modify" as const,
+      content: "export interface User { id: string; name: string; email: string; }\n",
+      reasoning: "API contract now requires email.",
+    };
+
+    await bridge.synchronizeImpacts([firstChange], parentGoal());
+    await bridge.synchronizeImpacts([firstChange, secondChange], parentGoal());
+
+    expect(childRunner.runGoal).toHaveBeenCalledTimes(2);
+    expect(bridge.completedRuns).toHaveLength(2);
+    expect(bridge.completedRuns[1]?.context.changes).toEqual([firstChange, secondChange]);
   });
 });
 
@@ -149,11 +206,11 @@ function parentGoal(): Goal {
   };
 }
 
-function goalResult(goalId: string, status: "complete" | "failed", totalTokens: number) {
+function goalResult(goalId: string, status: GoalResult["status"], totalTokens: number): GoalResult {
   return {
     goal_id: goalId,
     status,
-    summary: status === "complete" ? "Child swarm updated Project B." : "Child swarm failed.",
+    summary: status === "complete" ? "Child swarm updated Project B." : "Child swarm did not complete.",
     changes: [],
     token_usage: { total: totalTokens, by_agent: { "child-builder": totalTokens } },
     duration_ms: 1,

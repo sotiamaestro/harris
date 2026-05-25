@@ -26,6 +26,10 @@ export class FileReader {
     return this.cache.get(relativePath);
   }
 
+  invalidate(relativePath: string): void {
+    this.cache.delete(relativePath);
+  }
+
   clearCache(): void {
     this.cache.clear();
   }
