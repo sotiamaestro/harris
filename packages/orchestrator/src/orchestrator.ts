@@ -15,6 +15,11 @@ import type { GeminiAgent } from "@harris/gemini";
 import { SwarmLifecycleManager } from "./lifecycle.js";
 import { SwarmReporter } from "./reporter.js";
 import { getPlugins } from "./plugins.js";
+import type { SwarmBridgeRun } from "./swarm-bridge.js";
+
+interface CrossProjectBridge {
+  synchronizeImpacts(changes: FileChange[], parentGoal: Goal): Promise<SwarmBridgeRun[]>;
+}
 
 export interface OrchestratorConfig {
   budget: {
@@ -41,10 +46,12 @@ export class Orchestrator {
   private reporter = new SwarmReporter();
   private accumulatedChanges: FileChange[] = [];
   private lastCompletedResponse: AgentResponse | null = null;
+  private activeGoal: Goal | null = null;
 
   constructor(
     private config: OrchestratorConfig,
     private codebase: CodebaseContext,
+    private crossProjectBridge?: CrossProjectBridge,
   ) {
     this.budget = {
       total: config.budget.total,
@@ -65,6 +72,7 @@ export class Orchestrator {
     const traceId = crypto.randomUUID();
     this.accumulatedChanges = [];
     this.lastCompletedResponse = null;
+    this.activeGoal = goal;
 
     const architect = this.findAgent("architect");
     if (!architect) {
@@ -98,8 +106,11 @@ export class Orchestrator {
 
     return {
       goal_id: goal.id,
-      status: finalResult?.status === "complete" ? "complete" : "partial",
-      summary: (this.lastCompletedResponse as AgentResponse | null)?.result?.summary ?? finalResult?.result?.summary ?? "Goal processing ended",
+      status: finalResult?.status === "failed" ? "failed" : finalResult?.status === "complete" ? "complete" : "partial",
+      summary:
+        finalResult?.status === "failed"
+          ? finalResult.result.summary
+          : (this.lastCompletedResponse as AgentResponse | null)?.result?.summary ?? finalResult?.result?.summary ?? "Goal processing ended",
       changes: this.collectAllChanges(),
       token_usage: {
         total: this.budget.consumed,
@@ -178,6 +189,11 @@ export class Orchestrator {
             continue;
           }
 
+          const bridgeFailure = await this.synchronizeCrossProjectBeforeTesting(action.invoke, message.trace_id, response.message_id);
+          if (bridgeFailure) {
+            return bridgeFailure;
+          }
+
           const currentZone = calculateZone(this.budget.consumed, this.budget.total);
           const ratio = this.budget.consumed / this.budget.total;
           const originalConstraints = action.context.constraints ?? message.context.constraints ?? [];
@@ -214,6 +230,9 @@ export class Orchestrator {
           );
 
           const peerResp = await this.processMessage(nextMessage);
+          if (peerResp?.status === "failed") {
+            return peerResp;
+          }
 
           if (peerResp && peerResp.status === "complete") {
             const resumeMessage = createMessage(
@@ -247,6 +266,11 @@ export class Orchestrator {
         const targetAgent = this.findAgent(action.invoke);
         if (!targetAgent) {
           continue;
+        }
+
+        const bridgeFailure = await this.synchronizeCrossProjectBeforeTesting(action.invoke, message.trace_id, response.message_id);
+        if (bridgeFailure) {
+          return bridgeFailure;
         }
 
         const currentZone = calculateZone(this.budget.consumed, this.budget.total);
@@ -284,11 +308,59 @@ export class Orchestrator {
           },
         );
 
-        await this.processMessage(nextMessage);
+        const nextResp = await this.processMessage(nextMessage);
+        if (nextResp?.status === "failed") {
+          return nextResp;
+        }
       }
     }
 
     return response;
+  }
+
+  private async synchronizeCrossProjectBeforeTesting(
+    invoke: AgentRole,
+    traceId: string,
+    parentMessageId: string,
+  ): Promise<AgentResponse | null> {
+    if (invoke !== "tester" || !this.crossProjectBridge || !this.activeGoal || !this.accumulatedChanges.length) {
+      return null;
+    }
+
+    let bridgeRuns: SwarmBridgeRun[];
+    try {
+      bridgeRuns = await this.crossProjectBridge.synchronizeImpacts(this.accumulatedChanges, this.activeGoal);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown child swarm failure";
+      return this.createBridgeFailureResponse(traceId, parentMessageId, `Child swarm synchronization failed: ${message}`);
+    }
+
+    const failedRuns = bridgeRuns.filter((run) => run.result.status === "failed");
+    if (!failedRuns.length) {
+      return null;
+    }
+
+    const failedProjects = failedRuns.map((run) => run.context.target_project).join(", ");
+    return this.createBridgeFailureResponse(
+      traceId,
+      parentMessageId,
+      `Child swarm failed for ${failedProjects}. Parent swarm blocked before testing.`,
+    );
+  }
+
+  private createBridgeFailureResponse(traceId: string, parentMessageId: string, summary: string): AgentResponse {
+    return {
+      message_id: crypto.randomUUID(),
+      in_response_to: parentMessageId,
+      trace_id: traceId,
+      status: "failed",
+      agent: { id: "swarm-bridge", role: "architect" },
+      result: { summary },
+      next_actions: [],
+      token_usage: { input: 0, output: 0, total: 0 },
+      confidence: 1,
+      flags: ["blocking_issue", "architectural_impact"],
+    };
   }
 
   private findAgent(role: AgentRole | { id: string; role: AgentRole }): GeminiAgent | undefined {

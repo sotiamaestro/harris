@@ -12,6 +12,7 @@ export * from "./lifecycle.js";
 export * from "./reporter.js";
 export * from "./goal-runner.js";
 export * from "./plugins.js";
+export * from "./swarm-bridge.js";
 
 export interface HarrisConfig {
   gemini_api_key: string;

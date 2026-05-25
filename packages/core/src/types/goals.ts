@@ -23,6 +23,36 @@ export interface Goal {
   created_at: number;
 }
 
+export interface SharedContext {
+  id: string;
+  parent_goal_id: string;
+  source_project: string;
+  target_project: string;
+  changed_files: string[];
+  changes: FileChange[];
+  matched_imports: string[];
+  importing_files: string[];
+  reason: string;
+  required_updates: string[];
+  created_at: number;
+}
+
+export interface CrossProjectImpact {
+  source_project: string;
+  target_project: string;
+  changed_files: string[];
+  matched_imports: string[];
+  importing_files: string[];
+  reason: string;
+  required_updates: string[];
+}
+
+export interface CrossProjectGoal extends Goal {
+  source_project: string;
+  target_project: string;
+  shared_context: SharedContext;
+}
+
 export interface GoalResult {
   goal_id: string;
   status: GoalStatus;
