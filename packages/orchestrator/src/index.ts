@@ -2,9 +2,10 @@ import { Orchestrator, type OrchestratorConfig } from "./orchestrator.js";
 import { GeminiAgent } from "@harris/gemini";
 import { LocalCodebaseContext } from "@harris/codebase";
 import { DEFAULT_AGENT_CONFIGS } from "@harris/core";
-import type { Goal, AgentConfig } from "@harris/core";
+import type { AgentRole, Goal, AgentConfig } from "@harris/core";
 import { getPlugins } from "./plugins.js";
 import type { VisualizerOptions } from "./visualizer.js";
+import { loadConfig, mergeConfig, type NormalizedHarrisConfig } from "./config-loader.js";
 
 export { Orchestrator, type OrchestratorConfig } from "./orchestrator.js";
 export * from "./agent-pool.js";
@@ -15,37 +16,65 @@ export * from "./goal-runner.js";
 export * from "./plugins.js";
 export * from "./swarm-bridge.js";
 export * from "./visualizer.js";
+export * from "./config-loader.js";
 
 export interface HarrisConfig {
   gemini_api_key: string;
   codebase_path: string;
   budget?: Partial<OrchestratorConfig["budget"]>;
   convergence?: Partial<OrchestratorConfig["convergence"]>;
+  agents?: NormalizedHarrisConfig["agents"];
   visualizer?: boolean | VisualizerOptions;
 }
 
 export async function createHarris(config: HarrisConfig) {
+  const fileConfig = await loadConfig(config.codebase_path);
   const codebase = new LocalCodebaseContext(config.codebase_path);
   await codebase.initialize();
 
+  const mergedConfig = mergeConfig(
+    {
+      budget: {
+        total: 2_000_000,
+        warning_threshold: 0.75,
+        hard_stop: 0.95,
+        per_agent_default: 200_000,
+        reserve_percentage: 0.10,
+      },
+      convergence: {
+        max_iterations_per_task: 3,
+        max_total_invocations: 50,
+        loop_detection_window: 5,
+      },
+    },
+    fileConfig,
+    {
+      budget: config.budget,
+      convergence: config.convergence,
+      agents: config.agents,
+      visualizer: config.visualizer,
+    },
+  );
+
   const orchestratorConfig: OrchestratorConfig = {
     budget: {
-      total: config.budget?.total ?? 2_000_000,
-      warning_threshold: config.budget?.warning_threshold ?? 0.75,
-      hard_stop: config.budget?.hard_stop ?? 0.95,
-      per_agent_default: config.budget?.per_agent_default ?? 200_000,
-      reserve_percentage: config.budget?.reserve_percentage ?? 0.10,
+      total: mergedConfig.budget.total,
+      warning_threshold: mergedConfig.budget.warning_threshold,
+      hard_stop: mergedConfig.budget.hard_stop,
+      per_agent_default: mergedConfig.budget.per_agent_default,
+      reserve_percentage: mergedConfig.budget.reserve_percentage,
     },
     convergence: {
-      max_iterations_per_task: config.convergence?.max_iterations_per_task ?? 3,
-      max_total_invocations: config.convergence?.max_total_invocations ?? 50,
-      loop_detection_window: config.convergence?.loop_detection_window ?? 5,
+      max_iterations_per_task: mergedConfig.convergence.max_iterations_per_task,
+      max_total_invocations: mergedConfig.convergence.max_total_invocations,
+      loop_detection_window: mergedConfig.convergence.loop_detection_window,
     },
   };
 
-  const orchestrator = new Orchestrator({ ...orchestratorConfig, visualizer: config.visualizer }, codebase);
+  const orchestrator = new Orchestrator({ ...orchestratorConfig, visualizer: mergedConfig.visualizer }, codebase);
+  const agentConfigs = mergeAgentConfigs(mergedConfig.agents);
 
-  const defaultAgentCards: AgentConfig[] = Object.entries(DEFAULT_AGENT_CONFIGS).map(([role, cfg]) => ({
+  const defaultAgentCards: AgentConfig[] = Object.entries(agentConfigs).map(([role, cfg]) => ({
     id: `${role}-001`,
     role: cfg.role,
     model: cfg.model,
@@ -62,7 +91,7 @@ export async function createHarris(config: HarrisConfig) {
 
   const allAgentConfigs = [...defaultAgentCards, ...pluginAgentConfigs];
 
-  for (const [role, cfg] of Object.entries(DEFAULT_AGENT_CONFIGS)) {
+  for (const [role, cfg] of Object.entries(agentConfigs)) {
     const agent = new GeminiAgent(
       { ...cfg, id: `${role}-001` },
       {
@@ -105,4 +134,19 @@ export async function createHarris(config: HarrisConfig) {
     orchestrator,
     codebase,
   };
+}
+
+function mergeAgentConfigs(overrides: NormalizedHarrisConfig["agents"] = {}) {
+  const merged = {} as Record<AgentRole, Omit<AgentConfig, "id">>;
+
+  for (const [role, cfg] of Object.entries(DEFAULT_AGENT_CONFIGS) as Array<[AgentRole, Omit<AgentConfig, "id">]>) {
+    merged[role] = {
+      ...cfg,
+      ...overrides[role],
+      role,
+      capabilities: cfg.capabilities,
+    };
+  }
+
+  return merged;
 }
