@@ -17,6 +17,7 @@ export * from "./plugins.js";
 export * from "./swarm-bridge.js";
 export * from "./visualizer.js";
 export * from "./config-loader.js";
+export * from "./templates.js";
 
 export interface HarrisConfig {
   gemini_api_key: string;
