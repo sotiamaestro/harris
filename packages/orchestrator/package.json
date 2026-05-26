@@ -16,6 +16,7 @@
   "dependencies": {
     "@harris/codebase": "workspace:*",
     "@harris/core": "workspace:*",
-    "@harris/gemini": "workspace:*"
+    "@harris/gemini": "workspace:*",
+    "yaml": "^2.9.0"
   }
 }
