@@ -4,6 +4,7 @@ import { LocalCodebaseContext } from "@harris/codebase";
 import { DEFAULT_AGENT_CONFIGS } from "@harris/core";
 import type { Goal, AgentConfig } from "@harris/core";
 import { getPlugins } from "./plugins.js";
+import type { VisualizerOptions } from "./visualizer.js";
 
 export { Orchestrator, type OrchestratorConfig } from "./orchestrator.js";
 export * from "./agent-pool.js";
@@ -13,12 +14,14 @@ export * from "./reporter.js";
 export * from "./goal-runner.js";
 export * from "./plugins.js";
 export * from "./swarm-bridge.js";
+export * from "./visualizer.js";
 
 export interface HarrisConfig {
   gemini_api_key: string;
   codebase_path: string;
   budget?: Partial<OrchestratorConfig["budget"]>;
   convergence?: Partial<OrchestratorConfig["convergence"]>;
+  visualizer?: boolean | VisualizerOptions;
 }
 
 export async function createHarris(config: HarrisConfig) {
@@ -40,7 +43,7 @@ export async function createHarris(config: HarrisConfig) {
     },
   };
 
-  const orchestrator = new Orchestrator(orchestratorConfig, codebase);
+  const orchestrator = new Orchestrator({ ...orchestratorConfig, visualizer: config.visualizer }, codebase);
 
   const defaultAgentCards: AgentConfig[] = Object.entries(DEFAULT_AGENT_CONFIGS).map(([role, cfg]) => ({
     id: `${role}-001`,

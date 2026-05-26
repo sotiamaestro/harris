@@ -16,6 +16,7 @@ import { SwarmLifecycleManager } from "./lifecycle.js";
 import { SwarmReporter } from "./reporter.js";
 import { getPlugins } from "./plugins.js";
 import type { SwarmBridgeRun } from "./swarm-bridge.js";
+import { SwarmVisualizer, type VisualizerOptions } from "./visualizer.js";
 
 interface CrossProjectBridge {
   synchronizeImpacts(changes: FileChange[], parentGoal: Goal): Promise<SwarmBridgeRun[]>;
@@ -34,6 +35,7 @@ export interface OrchestratorConfig {
     max_total_invocations: number;
     loop_detection_window: number;
   };
+  visualizer?: boolean | VisualizerOptions;
 }
 
 export class Orchestrator {
@@ -47,6 +49,7 @@ export class Orchestrator {
   private accumulatedChanges: FileChange[] = [];
   private lastCompletedResponse: AgentResponse | null = null;
   private activeGoal: Goal | null = null;
+  private visualizer: SwarmVisualizer;
 
   constructor(
     private config: OrchestratorConfig,
@@ -61,6 +64,9 @@ export class Orchestrator {
       warning_threshold: config.budget.warning_threshold,
       hard_stop: config.budget.hard_stop,
     };
+    this.visualizer = new SwarmVisualizer(
+      typeof config.visualizer === "boolean" ? { enabled: config.visualizer } : config.visualizer,
+    );
   }
 
   registerAgent(agent: GeminiAgent): void {
@@ -73,6 +79,7 @@ export class Orchestrator {
     this.accumulatedChanges = [];
     this.lastCompletedResponse = null;
     this.activeGoal = goal;
+    this.visualizer.startGoal(goal, this.budget, this.getRegisteredRoles());
 
     const architect = this.findAgent("architect");
     if (!architect) {
@@ -104,7 +111,7 @@ export class Orchestrator {
 
     const finalResult = await this.processMessage(initialMessage);
 
-    return {
+    const result: GoalResult = {
       goal_id: goal.id,
       status: finalResult?.status === "failed" ? "failed" : finalResult?.status === "complete" ? "complete" : "partial",
       summary:
@@ -119,6 +126,8 @@ export class Orchestrator {
       duration_ms: Date.now() - startTime,
       audit_trail: this.auditLog,
     };
+    this.visualizer.finish(result.status === "complete" ? "complete" : result.status === "failed" ? "failed" : "partial", this.budget);
+    return result;
   }
 
   private async processMessage(message: AgentMessage): Promise<AgentResponse | null> {
@@ -150,19 +159,28 @@ export class Orchestrator {
     this.messageHistory.push(message);
     const startTime = Date.now();
 
-    this.reporter.reportTaskStarted(message);
+    this.visualizer.reportTaskStarted(message, this.budget);
+    if (!this.visualizer.enabled) {
+      this.reporter.reportTaskStarted(message);
+    }
 
     let response: AgentResponse;
     try {
       response = await this.invokeAgent(agent, message);
     } catch (error) {
-      this.reporter.reportError(error as Error);
+      this.visualizer.reportError(error as Error, message);
+      if (!this.visualizer.enabled) {
+        this.reporter.reportError(error as Error);
+      }
       return null;
     }
 
     this.recordUsage(agent.identity.id, response.token_usage.total);
     this.logAudit(message, response, startTime);
-    this.reporter.reportResponseReceived(response);
+    this.visualizer.reportResponseReceived(response, this.budget, Date.now() - startTime);
+    if (!this.visualizer.enabled) {
+      this.reporter.reportResponseReceived(response);
+    }
 
     if (response.status === "complete" || response.status === "partial") {
       this.lastCompletedResponse = response;
@@ -373,6 +391,11 @@ export class Orchestrator {
     return undefined;
   }
 
+  private getRegisteredRoles(): AgentRole[] {
+    const roles = [...new Set([...this.agents.values()].map((agent) => agent.identity.role))];
+    return roles.length ? roles : ["architect", "analyst", "builder", "reviewer", "tester", "release"];
+  }
+
   private recordUsage(agentId: string, tokens: number): void {
     this.budget.consumed += tokens;
     const current = this.budget.per_agent.get(agentId) ?? 0;
@@ -434,7 +457,10 @@ export class Orchestrator {
     try {
       return await this.invokeAgent(release, shutdownMessage);
     } catch (error) {
-      this.reporter.reportError(error as Error);
+      this.visualizer.reportError(error as Error, shutdownMessage);
+      if (!this.visualizer.enabled) {
+        this.reporter.reportError(error as Error);
+      }
       return null;
     }
   }
