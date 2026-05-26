@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { createHarris, registerPlugin, listPlugins } from "@harris/orchestrator";
-import { GeminiAgent } from "@harris/gemini";
+import type { GeminiAgent } from "@harris/gemini";
 import { buildSystemPrompt } from "../packages/gemini/src/prompt-builder.js";
-import type { AgentMessage, AgentResponse, Goal } from "@harris/core";
+import type { AgentConfig, AgentMessage, AgentResponse, Goal } from "@harris/core";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+
+type OrchestratorWithAgents = {
+  agents: Map<string, GeminiAgent>;
+};
 
 describe("Harris Swarm Plugin System", () => {
   const sandboxDir = join(process.cwd(), "test-sandbox-plugins");
@@ -69,7 +73,7 @@ describe("Harris Swarm Plugin System", () => {
     });
 
     // Check if the plugin agent is registered in the orchestrator
-    const registeredAgent = (harris.orchestrator as any).agents.get("custom-builder-002");
+    const registeredAgent = (harris.orchestrator as unknown as OrchestratorWithAgents).agents.get("custom-builder-002");
     expect(registeredAgent).toBeDefined();
     expect(registeredAgent.identity.id).toBe("custom-builder-002");
     expect(registeredAgent.identity.role).toBe("builder");
@@ -86,20 +90,20 @@ describe("Harris Swarm Plugin System", () => {
     });
 
     // 1. Role-specific prompt test
-    const reviewerConfig = {
+    const reviewerConfig: AgentConfig = {
       id: "reviewer-test-01",
-      role: "reviewer" as any,
-      model: "gemini-2.5-flash" as any,
+      role: "reviewer",
+      model: "gemini-2.5-flash",
       capabilities: [],
     };
     const reviewerPrompt = buildSystemPrompt(reviewerConfig, []);
     expect(reviewerPrompt).toContain("Extra instructions for reviewer role");
 
     // 2. Agent ID-specific prompt test
-    const agentConfig = {
+    const agentConfig: AgentConfig = {
       id: "custom-agent-prompt-test",
-      role: "builder" as any,
-      model: "gemini-2.5-flash" as any,
+      role: "builder",
+      model: "gemini-2.5-flash",
       capabilities: [],
     };
     const agentPrompt = buildSystemPrompt(agentConfig, []);
@@ -115,12 +119,12 @@ describe("Harris Swarm Plugin System", () => {
       hooks: {
         beforeInvoke: (msg) => {
           hookOrder.push("plugin1-before");
-          msg.action = msg.action + "_1";
+          msg.action = `${msg.action}_1`;
           return msg;
         },
         afterInvoke: (res) => {
           hookOrder.push("plugin1-after");
-          res.result.summary = res.result.summary + "_1";
+          res.result.summary = `${res.result.summary}_1`;
           return res;
         },
       },
@@ -132,12 +136,12 @@ describe("Harris Swarm Plugin System", () => {
       hooks: {
         beforeInvoke: (msg) => {
           hookOrder.push("plugin2-before");
-          msg.action = msg.action + "_2";
+          msg.action = `${msg.action}_2`;
           return msg;
         },
         afterInvoke: (res) => {
           hookOrder.push("plugin2-after");
-          res.result.summary = res.result.summary + "_2";
+          res.result.summary = `${res.result.summary}_2`;
           return res;
         },
       },
@@ -149,8 +153,10 @@ describe("Harris Swarm Plugin System", () => {
     });
 
     // Get an agent to spy on or mock
-    const architect = (harris.orchestrator as any).agents.get("architect-001") as GeminiAgent;
-    expect(architect).toBeDefined();
+    const architect = (harris.orchestrator as unknown as OrchestratorWithAgents).agents.get("architect-001");
+    if (!architect) {
+      throw new Error("Expected architect-001 to be registered");
+    }
 
     let finalAction = "";
     vi.spyOn(architect, "invoke").mockImplementation(async (msg: AgentMessage): Promise<AgentResponse> => {
@@ -214,7 +220,10 @@ describe("Harris Swarm Plugin System", () => {
       codebase_path: sandboxDir,
     });
 
-    const architect = (harris.orchestrator as any).agents.get("architect-001") as GeminiAgent;
+    const architect = (harris.orchestrator as unknown as OrchestratorWithAgents).agents.get("architect-001");
+    if (!architect) {
+      throw new Error("Expected architect-001 to be registered");
+    }
     vi.spyOn(architect, "invoke").mockImplementation(async () => {
       throw new Error("Simulated agent failure");
     });
