@@ -1,0 +1,16 @@
+services:
+  harris:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: harris-swarm:local
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CODEBASE_PATH: /workspace/codebase
+      HARRIS_AUDIT_DIR: /workspace/codebase/.harris/audit
+    volumes:
+      - ${HARRIS_CODEBASE:-.}:/workspace/codebase
+      - harris-audit:/workspace/codebase/.harris
+
+volumes:
+  harris-audit:

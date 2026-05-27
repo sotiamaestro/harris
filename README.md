@@ -124,6 +124,24 @@ GEMINI_API_KEY=your_key pnpm test:integration       # live API tests
 pnpm lint                                           # biome checks
 ```
 
+### Docker
+
+Build the container image:
+
+```bash
+docker build -t harris-swarm:local .
+```
+
+Run with Docker Compose. `GEMINI_API_KEY` is read from your shell environment, and your local codebase is mounted into the container at `/workspace/codebase`.
+
+```bash
+export GEMINI_API_KEY=your_key
+export HARRIS_CODEBASE=/absolute/path/to/your/project
+docker compose run --rm harris
+```
+
+If `HARRIS_CODEBASE` is not set, Compose mounts the current directory. Audit logs are persisted in the `harris-audit` volume at `/workspace/codebase/.harris`.
+
 ---
 
 ## Architecture
