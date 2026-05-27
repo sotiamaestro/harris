@@ -80,6 +80,7 @@ export class Orchestrator {
     this.accumulatedChanges = [];
     this.lastCompletedResponse = null;
     this.activeGoal = goal;
+    this.resetAgentResponseCaches();
     this.visualizer.startGoal(goal, this.budget, this.getRegisteredRoles());
 
     const architect = this.findAgent("architect");
@@ -416,6 +417,12 @@ export class Orchestrator {
   private getRegisteredRoles(): AgentRole[] {
     const roles = [...new Set([...this.agents.values()].map((agent) => agent.identity.role))];
     return roles.length ? roles : ["architect", "analyst", "builder", "reviewer", "tester", "release"];
+  }
+
+  private resetAgentResponseCaches(): void {
+    for (const agent of this.agents.values()) {
+      agent.resetResponseCache();
+    }
   }
 
   private recordUsage(agentId: string, tokens: number): void {

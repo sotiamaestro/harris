@@ -1,8 +1,18 @@
+import { createHash } from "node:crypto";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AgentConfig, AgentMessage, AgentResponse, Peer } from "@harris/core";
 import { buildSystemPrompt } from "./prompt-builder.js";
 import { parseAgentResponse } from "./response-parser.js";
 import { estimateTokens } from "./token-counter.js";
+
+export interface GeminiResponseCacheStats {
+  hits: number;
+  misses: number;
+  size: number;
+  capacity: number;
+}
+
+const RESPONSE_CACHE_CAPACITY = 50;
 
 export class GeminiAgent implements Peer {
   readonly identity: {
@@ -12,6 +22,9 @@ export class GeminiAgent implements Peer {
   private config: AgentConfig;
   private peers: AgentConfig[] = [];
   private apiKey: string;
+  private responseCache = new Map<string, AgentResponse>();
+  private cacheHits = 0;
+  private cacheMisses = 0;
 
   constructor(config: AgentConfig, options: { apiKey?: string; peers?: AgentConfig[] } = {}) {
     this.config = config;
@@ -24,7 +37,32 @@ export class GeminiAgent implements Peer {
     this.peers = peers;
   }
 
+  resetResponseCache(): void {
+    this.responseCache.clear();
+    this.cacheHits = 0;
+    this.cacheMisses = 0;
+  }
+
+  getCacheStats(): GeminiResponseCacheStats {
+    return {
+      hits: this.cacheHits,
+      misses: this.cacheMisses,
+      size: this.responseCache.size,
+      capacity: RESPONSE_CACHE_CAPACITY,
+    };
+  }
+
   async invoke(message: AgentMessage): Promise<AgentResponse> {
+    const cacheKey = this.createCacheKey(message);
+    const cached = this.responseCache.get(cacheKey);
+    if (cached) {
+      this.cacheHits++;
+      this.responseCache.delete(cacheKey);
+      this.responseCache.set(cacheKey, cached);
+      return this.cloneCachedResponse(cached, message);
+    }
+
+    this.cacheMisses++;
     const systemPrompt = buildSystemPrompt(
       this.config,
       this.peers,
@@ -39,7 +77,7 @@ export class GeminiAgent implements Peer {
       const outputTokens = estimateTokens(mockText);
       const resultObj = parseAgentResponse<AgentResponse>(mockText);
 
-      return {
+      return this.cacheResponse(cacheKey, {
         message_id: message.message_id,
         in_response_to: message.message_id,
         trace_id: message.trace_id,
@@ -54,7 +92,7 @@ export class GeminiAgent implements Peer {
         },
         confidence: resultObj.confidence ?? 0.9,
         flags: resultObj.flags ?? [],
-      };
+      });
     }
 
     const genAI = new GoogleGenerativeAI(this.apiKey);
@@ -74,7 +112,7 @@ export class GeminiAgent implements Peer {
 
     const parsed = parseAgentResponse<AgentResponse>(text);
 
-    return {
+    return this.cacheResponse(cacheKey, {
       message_id: parsed.message_id || message.message_id,
       in_response_to: message.message_id,
       trace_id: message.trace_id,
@@ -98,6 +136,69 @@ export class GeminiAgent implements Peer {
           },
       confidence: parsed.confidence ?? 0.9,
       flags: parsed.flags ?? [],
+    });
+  }
+
+  private createCacheKey(message: AgentMessage): string {
+    const keyInput = JSON.stringify({
+      role: this.identity.role,
+      action: message.action,
+      relevant_files: message.context.relevant_files,
+      constraints: message.context.constraints,
+    });
+
+    return createHash("sha256").update(keyInput).digest("hex");
+  }
+
+  private cacheResponse(cacheKey: string, response: AgentResponse): AgentResponse {
+    this.responseCache.set(cacheKey, this.cloneResponse(response));
+    if (this.responseCache.size > RESPONSE_CACHE_CAPACITY) {
+      const oldestKey = this.responseCache.keys().next().value;
+      if (oldestKey) {
+        this.responseCache.delete(oldestKey);
+      }
+    }
+
+    return response;
+  }
+
+  private cloneCachedResponse(response: AgentResponse, message: AgentMessage): AgentResponse {
+    return {
+      ...this.cloneResponse(response),
+      message_id: message.message_id,
+      in_response_to: message.message_id,
+      trace_id: message.trace_id,
+    };
+  }
+
+  private cloneResponse(response: AgentResponse): AgentResponse {
+    return {
+      ...response,
+      result: {
+        ...response.result,
+        changes: response.result.changes?.map((change) => ({ ...change })),
+        feedback: response.result.feedback?.map((feedback) => ({ ...feedback })),
+        test_results: response.result.test_results
+          ? {
+              ...response.result.test_results,
+              failures: response.result.test_results.failures.map((failure) => ({ ...failure })),
+            }
+          : undefined,
+        diagnosis: response.result.diagnosis ? { ...response.result.diagnosis } : undefined,
+        decision: response.result.decision
+          ? {
+              ...response.result.decision,
+              principles_applied: [...response.result.decision.principles_applied],
+              alternatives_considered: [...response.result.decision.alternatives_considered],
+            }
+          : undefined,
+      },
+      next_actions: response.next_actions.map((action) => ({
+        ...action,
+        context: { ...action.context },
+      })),
+      token_usage: { ...response.token_usage },
+      flags: [...response.flags],
     };
   }
 
