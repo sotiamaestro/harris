@@ -1,5 +1,6 @@
 import type { FileChange } from "./messages.js";
 import type { AuditEntry } from "./audit.js";
+import type { CodebaseContext } from "./codebase.js";
 
 export type GoalStatus = "pending" | "active" | "blocked" | "complete" | "failed" | "partial";
 
@@ -8,6 +9,7 @@ export interface AcceptanceCriteria {
   verifiable: boolean;
   verified: boolean;
   verified_by?: string;
+  validator?: (codebase: CodebaseContext) => Promise<boolean>;
 }
 
 export interface Goal {

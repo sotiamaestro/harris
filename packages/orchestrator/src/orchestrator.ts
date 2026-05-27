@@ -17,6 +17,7 @@ import { SwarmReporter } from "./reporter.js";
 import { getPlugins } from "./plugins.js";
 import type { SwarmBridgeRun } from "./swarm-bridge.js";
 import { SwarmVisualizer, type VisualizerOptions } from "./visualizer.js";
+import { runAcceptanceCriteriaValidators } from "./goal-runner.js";
 
 interface CrossProjectBridge {
   synchronizeImpacts(changes: FileChange[], parentGoal: Goal): Promise<SwarmBridgeRun[]>;
@@ -111,13 +112,17 @@ export class Orchestrator {
 
     const finalResult = await this.processMessage(initialMessage);
 
+    const validationReport = await runAcceptanceCriteriaValidators(goal, this.codebase);
     const result: GoalResult = {
       goal_id: goal.id,
       status: finalResult?.status === "failed" ? "failed" : finalResult?.status === "complete" ? "complete" : "partial",
       summary:
-        finalResult?.status === "failed"
-          ? finalResult.result.summary
-          : (this.lastCompletedResponse as AgentResponse | null)?.result?.summary ?? finalResult?.result?.summary ?? "Goal processing ended",
+        this.appendValidationSummary(
+          finalResult?.status === "failed"
+            ? finalResult.result.summary
+            : (this.lastCompletedResponse as AgentResponse | null)?.result?.summary ?? finalResult?.result?.summary ?? "Goal processing ended",
+          validationReport,
+        ),
       changes: this.collectAllChanges(),
       token_usage: {
         total: this.budget.consumed,
@@ -128,6 +133,23 @@ export class Orchestrator {
     };
     this.visualizer.finish(result.status === "complete" ? "complete" : result.status === "failed" ? "failed" : "partial", this.budget);
     return result;
+  }
+
+  private appendValidationSummary(
+    summary: string,
+    validationReport: Awaited<ReturnType<typeof runAcceptanceCriteriaValidators>>,
+  ): string {
+    if (validationReport.ran === 0) {
+      return summary;
+    }
+
+    const details = [
+      `Custom validators: ${validationReport.passed.length}/${validationReport.ran} passed.`,
+      ...validationReport.failed.map((criterion) => `Failed criterion: ${criterion}.`),
+      ...validationReport.errors.map((entry) => `Validator error for "${entry.criterion}": ${entry.error}.`),
+    ];
+
+    return `${summary}\n${details.join("\n")}`;
   }
 
   private async processMessage(message: AgentMessage): Promise<AgentResponse | null> {
