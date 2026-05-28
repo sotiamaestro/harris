@@ -6,3 +6,4 @@ export * from "./search.js";
 export * from "./diff-engine.js";
 export * from "./version-tracker.js";
 export * from "./attribution.js";
+export * from "./language-detector.js";
