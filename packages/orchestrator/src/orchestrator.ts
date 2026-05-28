@@ -1,5 +1,6 @@
 import type {
   AgentMessage,
+  AgentIdentity,
   AgentResponse,
   AgentRole,
   Goal,
@@ -9,6 +10,8 @@ import type {
   FileChange,
   AgentConfig,
   CodebaseContext,
+  FileTree,
+  NextAction,
 } from "@harris/core";
 import { createMessage, calculateZone, createSnapshot } from "@harris/core";
 import type { GeminiAgent } from "@harris/gemini";
@@ -21,6 +24,15 @@ import { runAcceptanceCriteriaValidators } from "./goal-runner.js";
 
 interface CrossProjectBridge {
   synchronizeImpacts(changes: FileChange[], parentGoal: Goal): Promise<SwarmBridgeRun[]>;
+}
+
+interface ProcessMessageOptions {
+  deferTesterActions?: boolean;
+}
+
+interface FileGroup {
+  module: string;
+  files: string[];
 }
 
 export interface OrchestratorConfig {
@@ -88,9 +100,7 @@ export class Orchestrator {
       throw new Error("No architect agent registered");
     }
 
-    const files = this.codebase.files?.children
-      ? this.codebase.files.children.map((f) => f.path)
-      : [];
+    const files = this.listCodebaseFiles();
 
     const initialMessage = createMessage(
       "task",
@@ -153,7 +163,10 @@ export class Orchestrator {
     return `${summary}\n${details.join("\n")}`;
   }
 
-  private async processMessage(message: AgentMessage): Promise<AgentResponse | null> {
+  private async processMessage(
+    message: AgentMessage,
+    options: ProcessMessageOptions = {},
+  ): Promise<AgentResponse | null> {
     const zone = calculateZone(this.budget.consumed, this.budget.total);
     if (zone === "red" && this.budget.consumed / this.budget.total >= this.budget.hard_stop) {
       return this.gracefulShutdown(message.trace_id);
@@ -222,9 +235,18 @@ export class Orchestrator {
       }
     }
 
+    const multiFileResponse = await this.processMultiFileGoalIfNeeded(agent.identity.role, message, response);
+    if (multiFileResponse) {
+      return multiFileResponse;
+    }
+
     if (response.status === "needs_peer") {
       if (response.next_actions?.length) {
         for (const action of response.next_actions) {
+          if (options.deferTesterActions && action.invoke === "tester") {
+            continue;
+          }
+
           const targetAgent = this.findAgent(action.invoke);
           if (!targetAgent) {
             continue;
@@ -239,6 +261,10 @@ export class Orchestrator {
           const ratio = this.budget.consumed / this.budget.total;
           const originalConstraints = action.context.constraints ?? message.context.constraints ?? [];
           const finalConstraints = [...originalConstraints];
+          const nextRelevantFiles = action.context.relevant_files ?? message.context.relevant_files;
+          const nextActionName = options.deferTesterActions
+            ? this.withGroupSuffix(action.action, nextRelevantFiles)
+            : action.action;
           if (currentZone === "orange" || currentZone === "red" || ratio >= this.budget.warning_threshold) {
             finalConstraints.push("BUDGET WARNING: Safety threshold exceeded. Tighten scope, avoid starting new work.");
           }
@@ -247,10 +273,10 @@ export class Orchestrator {
             "task",
             agent.identity,
             targetAgent.identity,
-            action.action,
+            nextActionName,
             {
               goal: message.context.goal,
-              relevant_files: action.context.relevant_files ?? message.context.relevant_files,
+              relevant_files: nextRelevantFiles,
               constraints: finalConstraints,
               prior_decisions: [
                 ...message.context.prior_decisions,
@@ -259,7 +285,7 @@ export class Orchestrator {
               iteration: action.context.iteration ?? 1,
               max_iterations:
                 action.context.max_iterations ?? this.config.convergence.max_iterations_per_task,
-              code_context: await this.gatherContext(action.context.relevant_files ?? message.context.relevant_files),
+              code_context: await this.gatherContext(nextRelevantFiles),
             },
             createSnapshot(this.budget, targetAgent.identity.id),
             {
@@ -270,7 +296,7 @@ export class Orchestrator {
             },
           );
 
-          const peerResp = await this.processMessage(nextMessage);
+          const peerResp = await this.processMessage(nextMessage, options);
           if (peerResp?.status === "failed") {
             return peerResp;
           }
@@ -298,12 +324,16 @@ export class Orchestrator {
               },
             );
             resumeMessage.payload = peerResp.result;
-            await this.processMessage(resumeMessage);
+            await this.processMessage(resumeMessage, options);
           }
         }
       }
     } else if (response.next_actions?.length && response.status !== "failed") {
       for (const action of response.next_actions) {
+        if (options.deferTesterActions && action.invoke === "tester") {
+          continue;
+        }
+
         const targetAgent = this.findAgent(action.invoke);
         if (!targetAgent) {
           continue;
@@ -318,6 +348,10 @@ export class Orchestrator {
         const ratio = this.budget.consumed / this.budget.total;
         const originalConstraints = action.context.constraints ?? message.context.constraints ?? [];
         const finalConstraints = [...originalConstraints];
+        const nextRelevantFiles = action.context.relevant_files ?? message.context.relevant_files;
+        const nextActionName = options.deferTesterActions
+          ? this.withGroupSuffix(action.action, nextRelevantFiles)
+          : action.action;
         if (currentZone === "orange" || currentZone === "red" || ratio >= this.budget.warning_threshold) {
           finalConstraints.push("BUDGET WARNING: Safety threshold exceeded. Tighten scope, avoid starting new work.");
         }
@@ -326,10 +360,10 @@ export class Orchestrator {
           "task",
           agent.identity,
           targetAgent.identity,
-          action.action,
+          nextActionName,
           {
             goal: message.context.goal,
-            relevant_files: action.context.relevant_files ?? message.context.relevant_files,
+            relevant_files: nextRelevantFiles,
             constraints: finalConstraints,
             prior_decisions: [
               ...message.context.prior_decisions,
@@ -338,7 +372,7 @@ export class Orchestrator {
             iteration: action.context.iteration ?? 1,
             max_iterations:
               action.context.max_iterations ?? this.config.convergence.max_iterations_per_task,
-            code_context: await this.gatherContext(action.context.relevant_files ?? message.context.relevant_files),
+            code_context: await this.gatherContext(nextRelevantFiles),
           },
           createSnapshot(this.budget, targetAgent.identity.id),
           {
@@ -349,7 +383,7 @@ export class Orchestrator {
           },
         );
 
-        const nextResp = await this.processMessage(nextMessage);
+        const nextResp = await this.processMessage(nextMessage, options);
         if (nextResp?.status === "failed") {
           return nextResp;
         }
@@ -357,6 +391,170 @@ export class Orchestrator {
     }
 
     return response;
+  }
+
+  private async processMultiFileGoalIfNeeded(
+    role: AgentRole,
+    message: AgentMessage,
+    response: AgentResponse,
+  ): Promise<AgentResponse | null> {
+    if (role !== "architect" || message.action !== "decompose_goal" || response.status === "failed") {
+      return null;
+    }
+
+    const files = message.context.relevant_files;
+    if (files.length < 5) {
+      return null;
+    }
+
+    const builderAction = response.next_actions.find((action) => action.invoke === "builder");
+    if (!builderAction) {
+      return null;
+    }
+
+    const groups = this.groupFilesByDirectory(files);
+    if (!groups.length) {
+      return null;
+    }
+
+    const builder = this.findAgent("builder");
+    if (!builder) {
+      return null;
+    }
+
+    const totalFiles = groups.reduce((sum, group) => sum + group.files.length, 0);
+    const baseEstimatedTokens = builderAction.estimated_tokens || this.config.budget.per_agent_default;
+    const groupResponses = await Promise.all(
+      groups.map(async (group) => {
+        const estimatedTokens = Math.max(1, Math.round((baseEstimatedTokens * group.files.length) / totalFiles));
+        const groupMessage = await this.createGroupedBuilderMessage(
+          message,
+          response,
+          builderAction,
+          builder.identity,
+          group,
+          estimatedTokens,
+        );
+        return this.processMessage(groupMessage, { deferTesterActions: true });
+      }),
+    );
+
+    const failedResponse = groupResponses.find((groupResponse) => groupResponse?.status === "failed");
+    if (failedResponse) {
+      return failedResponse;
+    }
+
+    const testerResponse = await this.runFinalMultiFileTester(message, response);
+    return testerResponse ?? this.lastNonNullResponse(groupResponses) ?? response;
+  }
+
+  private async createGroupedBuilderMessage(
+    parentMessage: AgentMessage,
+    architectResponse: AgentResponse,
+    builderAction: NextAction,
+    builderIdentity: AgentIdentity,
+    group: FileGroup,
+    estimatedTokens: number,
+  ): Promise<AgentMessage> {
+    const originalConstraints = builderAction.context.constraints ?? parentMessage.context.constraints ?? [];
+    const finalConstraints = [
+      ...originalConstraints,
+      `MULTI-FILE GROUP: ${group.module}`,
+      `GROUP TOKEN BUDGET: ${estimatedTokens}`,
+    ];
+
+    return createMessage(
+      "task",
+      architectResponse.agent,
+      builderIdentity,
+      `${builderAction.action} [${group.module}]`,
+      {
+        goal: parentMessage.context.goal,
+        relevant_files: group.files,
+        constraints: finalConstraints,
+        prior_decisions: [
+          ...parentMessage.context.prior_decisions,
+          ...(architectResponse.result?.decision ? [architectResponse.result.decision.choice] : []),
+        ],
+        iteration: builderAction.context.iteration ?? 1,
+        max_iterations: builderAction.context.max_iterations ?? this.config.convergence.max_iterations_per_task,
+        code_context: await this.gatherContext(group.files),
+      },
+      createSnapshot(this.budget, typeof builderIdentity === "string" ? builderIdentity : builderIdentity.id),
+      {
+        trace_id: parentMessage.trace_id,
+        parent_message_id: architectResponse.message_id,
+        priority: builderAction.priority,
+        estimated_tokens: estimatedTokens,
+      },
+    );
+  }
+
+  private async runFinalMultiFileTester(
+    parentMessage: AgentMessage,
+    architectResponse: AgentResponse,
+  ): Promise<AgentResponse | null> {
+    const tester = this.findAgent("tester");
+    if (!tester) {
+      return null;
+    }
+
+    const bridgeFailure = await this.synchronizeCrossProjectBeforeTesting(
+      "tester",
+      parentMessage.trace_id,
+      architectResponse.message_id,
+    );
+    if (bridgeFailure) {
+      return bridgeFailure;
+    }
+
+    const testerMessage = createMessage(
+      "task",
+      architectResponse.agent,
+      tester.identity,
+      "Run full test suite after multi-file groups",
+      {
+        goal: parentMessage.context.goal,
+        relevant_files: parentMessage.context.relevant_files,
+        constraints: parentMessage.context.constraints,
+        prior_decisions: parentMessage.context.prior_decisions,
+        iteration: 1,
+        max_iterations: this.config.convergence.max_iterations_per_task,
+        code_context: await this.gatherContext(parentMessage.context.relevant_files),
+      },
+      createSnapshot(this.budget, tester.identity.id),
+      {
+        trace_id: parentMessage.trace_id,
+        parent_message_id: architectResponse.message_id,
+        priority: 1,
+      },
+    );
+
+    return this.processMessage(testerMessage);
+  }
+
+  private groupFilesByDirectory(files: string[]): FileGroup[] {
+    const grouped = new Map<string, string[]>();
+
+    for (const file of files) {
+      const parts = file.split("/");
+      const module = parts.length > 1 ? parts.slice(0, -1).join("/") : ".";
+      const group = grouped.get(module) ?? [];
+      group.push(file);
+      grouped.set(module, group);
+    }
+
+    return [...grouped.entries()]
+      .map(([module, groupFiles]) => ({ module, files: groupFiles }))
+      .sort((left, right) => left.module.localeCompare(right.module));
+  }
+
+  private withGroupSuffix(action: string, relevantFiles: string[]): string {
+    const group = this.groupFilesByDirectory(relevantFiles)[0];
+    if (!group || action.includes(`[${group.module}]`)) {
+      return action;
+    }
+    return `${action} [${group.module}]`;
   }
 
   private async synchronizeCrossProjectBeforeTesting(
@@ -531,6 +729,36 @@ export class Orchestrator {
       }
     }
     return context;
+  }
+
+  private listCodebaseFiles(): string[] {
+    const files: string[] = [];
+    const visit = (node: FileTree): void => {
+      if (node.type === "file") {
+        files.push(node.path);
+        return;
+      }
+
+      for (const child of node.children ?? []) {
+        visit(child);
+      }
+    };
+
+    if (this.codebase.files) {
+      visit(this.codebase.files);
+    }
+
+    return files;
+  }
+
+  private lastNonNullResponse(responses: Array<AgentResponse | null>): AgentResponse | null {
+    for (let index = responses.length - 1; index >= 0; index--) {
+      const response = responses[index];
+      if (response) {
+        return response;
+      }
+    }
+    return null;
   }
 
   private async applyChange(change: FileChange, agentId: string): Promise<void> {
