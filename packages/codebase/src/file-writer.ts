@@ -14,11 +14,12 @@ export class FileWriter {
       updateVersion(path: string, content: string): string;
       checkConflict(path: string, baseVersion?: string): void;
     },
+    baseVersion?: string,
   ): Promise<FileChange> {
     const oldVersion = versionTracker.getVersion(relativePath);
 
     // Enforce optimistic lock checking prior to modifications
-    versionTracker.checkConflict(relativePath, oldVersion);
+    versionTracker.checkConflict(relativePath, baseVersion);
 
     const fullPath = join(this.root, relativePath);
     await writeFile(fullPath, content, "utf-8");

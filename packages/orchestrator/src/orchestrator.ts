@@ -193,6 +193,7 @@ export class Orchestrator {
 
     this.invocationCount++;
     this.messageHistory.push(message);
+    this.lifecycle.recordTaskStep(message);
     const startTime = Date.now();
 
     this.visualizer.reportTaskStarted(message, this.budget);
@@ -203,7 +204,11 @@ export class Orchestrator {
     let response: AgentResponse;
     try {
       response = await this.invokeAgent(agent, message);
+      this.lifecycle.recordResponse(response, message.action);
     } catch (error) {
+      if (error instanceof Error && error.message.includes("circuit breaker")) {
+        return this.handleLoop(message);
+      }
       this.visualizer.reportError(error as Error, message);
       if (!this.visualizer.enabled) {
         this.reporter.reportError(error as Error);
@@ -763,7 +768,7 @@ export class Orchestrator {
 
   private async applyChange(change: FileChange, agentId: string): Promise<void> {
     if (change.action === "create" || change.action === "modify") {
-      await this.codebase.write(change.file, change.content, agentId);
+      await this.codebase.write(change.file, change.content, agentId, change.base_version);
     }
     this.accumulatedChanges.push(change);
   }
