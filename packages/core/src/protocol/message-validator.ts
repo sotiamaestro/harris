@@ -9,7 +9,7 @@ export function validateMessage(message: unknown): message is AgentMessage {
     typeof msg.type === "string" &&
     typeof msg.from === "object" &&
     msg.from !== null &&
-    typeof msg.to === "object" || msg.to === "*" &&
+    ((typeof msg.to === "object" && msg.to !== null) || msg.to === "*") &&
     typeof msg.trace_id === "string" &&
     typeof msg.action === "string" &&
     typeof msg.context === "object" &&
