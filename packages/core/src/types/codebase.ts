@@ -4,7 +4,7 @@ export interface CodebaseContext {
   root: string; // absolute path to codebase root
   files: FileTree;
   read(path: string): Promise<FileContent>;
-  write(path: string, content: string, agentId: string): Promise<FileChange>;
+  write(path: string, content: string, agentId: string, baseVersion?: string): Promise<FileChange>;
   search(query: string, options?: SearchOptions): Promise<SearchResult[]>;
   diff(since?: string): Promise<FileDiff[]>;
   blame(path: string): AgentAttribution[];

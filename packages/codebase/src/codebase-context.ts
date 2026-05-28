@@ -59,7 +59,7 @@ export class LocalCodebaseContext implements CodebaseContext {
     return content;
   }
 
-  async write(path: string, content: string, agentId: string): Promise<FileChange> {
+  async write(path: string, content: string, agentId: string, baseVersion?: string): Promise<FileChange> {
     let before = "";
     try {
       const existing = await this.reader.read(path, this.versionTracker);
@@ -68,7 +68,7 @@ export class LocalCodebaseContext implements CodebaseContext {
       // Expected for new files
     }
 
-    const change = await this.writer.write(path, content, agentId, this.versionTracker);
+    const change = await this.writer.write(path, content, agentId, this.versionTracker, baseVersion);
 
     this.diffEngine.recordDiff(path, before, content, agentId);
     this.attributor.recordModification(path, agentId, "builder", `Modified by ${agentId}`);
