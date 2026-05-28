@@ -6,18 +6,6 @@ import {
   TokenBucketRateLimiter,
 } from "../packages/gemini/src/rate-limiter.js";
 
-const { generateContent } = vi.hoisted(() => ({
-  generateContent: vi.fn(),
-}));
-
-vi.mock("@google/generative-ai", () => ({
-  GoogleGenerativeAI: vi.fn(() => ({
-    getGenerativeModel: vi.fn(() => ({
-      generateContent,
-    })),
-  })),
-}));
-
 describe("TokenBucketRateLimiter", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -108,22 +96,43 @@ describe("TokenBucketRateLimiter", () => {
 describe("GeminiAgent rate limiting", () => {
   beforeEach(() => {
     vi.stubEnv("NODE_ENV", "production");
-    generateContent.mockResolvedValue({
-      response: {
-        text: () =>
-          JSON.stringify({
-            message_id: "gemini-response",
-            status: "complete",
-            result: { summary: "Generated response." },
-            next_actions: [],
-            confidence: 0.9,
-            flags: [],
-          }),
-      },
-    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          candidates: [
+            {
+              content: {
+                role: "model",
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      message_id: "gemini-response",
+                      status: "complete",
+                      result: { summary: "Generated response." },
+                      next_actions: [],
+                      confidence: 0.9,
+                      flags: [],
+                    }),
+                  },
+                ],
+              },
+              finishReason: "STOP",
+              index: 0,
+            },
+          ],
+          usageMetadata: {
+            promptTokenCount: 10,
+            candidatesTokenCount: 5,
+            totalTokenCount: 15,
+          },
+        }),
+      ),
+    );
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.clearAllMocks();
   });
@@ -152,12 +161,12 @@ describe("GeminiAgent rate limiting", () => {
     await Promise.resolve();
 
     expect(rateLimiter.acquire).toHaveBeenCalledTimes(1);
-    expect(generateContent).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
 
     releaseToken();
     await invocation;
 
-    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
