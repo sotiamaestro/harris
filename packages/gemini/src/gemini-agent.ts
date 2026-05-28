@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AgentConfig, AgentMessage, AgentResponse, Peer } from "@harris/core";
 import { buildSystemPrompt } from "./prompt-builder.js";
+import {
+  TokenBucketRateLimiter,
+  type RateLimiter,
+  type TokenBucketRateLimiterOptions,
+} from "./rate-limiter.js";
 import { parseAgentResponse } from "./response-parser.js";
 import { estimateTokens } from "./token-counter.js";
 
@@ -12,7 +17,15 @@ export interface GeminiResponseCacheStats {
   capacity: number;
 }
 
+export interface GeminiAgentOptions {
+  apiKey?: string;
+  peers?: AgentConfig[];
+  rateLimiter?: RateLimiter;
+  rateLimit?: TokenBucketRateLimiterOptions;
+}
+
 const RESPONSE_CACHE_CAPACITY = 50;
+const defaultRateLimiter = new TokenBucketRateLimiter();
 
 export class GeminiAgent implements Peer {
   readonly identity: {
@@ -25,12 +38,16 @@ export class GeminiAgent implements Peer {
   private responseCache = new Map<string, AgentResponse>();
   private cacheHits = 0;
   private cacheMisses = 0;
+  private rateLimiter: RateLimiter;
 
-  constructor(config: AgentConfig, options: { apiKey?: string; peers?: AgentConfig[] } = {}) {
+  constructor(config: AgentConfig, options: GeminiAgentOptions = {}) {
     this.config = config;
     this.identity = { id: config.id, role: config.role };
     this.peers = options.peers ?? [];
     this.apiKey = options.apiKey ?? process.env.GEMINI_API_KEY ?? "";
+    this.rateLimiter =
+      options.rateLimiter ??
+      (options.rateLimit ? new TokenBucketRateLimiter(options.rateLimit) : defaultRateLimiter);
   }
 
   setPeers(peers: AgentConfig[]): void {
@@ -106,6 +123,7 @@ export class GeminiAgent implements Peer {
       systemInstruction: systemPrompt,
     });
 
+    await this.rateLimiter.acquire();
     const result = await model.generateContent(userPrompt);
     const response = await result.response;
     const text = response.text();
