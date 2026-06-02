@@ -162,9 +162,9 @@ function goalResult(goalId: string, status: "complete" | "failed", totalTokens: 
 }
 
 function registerParentAgents(orchestrator: Orchestrator, options: { onTesterInvoke: () => void }): void {
-  const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini", capabilities: [] });
-  const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini", capabilities: [] });
-  const tester = new GeminiAgent({ id: "tester-001", role: "tester", model: "gemini", capabilities: [] });
+  const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini-2.5-flash", capabilities: [] });
+  const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini-2.5-flash", capabilities: [] });
+  const tester = new GeminiAgent({ id: "tester-001", role: "tester", model: "gemini-2.5-flash", capabilities: [] });
 
   vi.spyOn(architect, "invoke").mockImplementation(async (msg) =>
     response(msg, architect, "Architect delegated API work.", [

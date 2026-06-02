@@ -14,7 +14,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google/generative-ai": "^0.24.1",
     "@harris/codebase": "workspace:*",
     "@harris/core": "workspace:*"
   }

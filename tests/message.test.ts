@@ -21,6 +21,7 @@ describe("Swarm Message System", () => {
         consumed: 100000,
         remaining: 900000,
         your_allocation: 100000,
+        zone: "green",
         warning_threshold: 0.8,
         hard_stop: 0.95,
       },
