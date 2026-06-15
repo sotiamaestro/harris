@@ -1,4 +1,4 @@
-import { formatPreview, takeFirst } from "./utils";
+import { formatPreview, takeFirst } from "./utils.js";
 
 export interface Digest {
   headline: string;

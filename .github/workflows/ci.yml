@@ -31,11 +31,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: |
-          npx tsup packages/core/src/index.ts --format esm --dts --clean --outDir packages/core/dist
-          npx tsup packages/codebase/src/index.ts --format esm --dts --clean --outDir packages/codebase/dist
-          npx tsup packages/gemini/src/index.ts --format esm --dts --clean --outDir packages/gemini/dist
-          npx tsup packages/orchestrator/src/index.ts --format esm --dts --clean --outDir packages/orchestrator/dist
+        run: pnpm build
 
       - name: Lint
         run: pnpm lint
@@ -66,11 +62,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: |
-          npx tsup packages/core/src/index.ts --format esm --dts --clean --outDir packages/core/dist
-          npx tsup packages/codebase/src/index.ts --format esm --dts --clean --outDir packages/codebase/dist
-          npx tsup packages/gemini/src/index.ts --format esm --dts --clean --outDir packages/gemini/dist
-          npx tsup packages/orchestrator/src/index.ts --format esm --dts --clean --outDir packages/orchestrator/dist
+        run: pnpm build
 
       - name: Integration Tests
         if: env.GEMINI_API_KEY != ''

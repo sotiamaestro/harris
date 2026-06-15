@@ -46,9 +46,9 @@ describe("Swarm Non-Happy-Path Orchestration", () => {
     const orchestrator = new Orchestrator(config, codebase);
 
     // Mock Agents
-    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini", capabilities: [] });
-    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini", capabilities: [] });
-    const reviewer = new GeminiAgent({ id: "reviewer-001", role: "reviewer", model: "gemini", capabilities: [] });
+    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini-2.5-flash", capabilities: [] });
+    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini-2.5-flash", capabilities: [] });
+    const reviewer = new GeminiAgent({ id: "reviewer-001", role: "reviewer", model: "gemini-2.5-flash", capabilities: [] });
 
     // Mock Architect: immediately delegates to Builder
     vi.spyOn(architect, "invoke").mockImplementation(async (msg: AgentMessage): Promise<AgentResponse> => ({
@@ -172,10 +172,10 @@ describe("Swarm Non-Happy-Path Orchestration", () => {
     const config = buildConfig();
     const orchestrator = new Orchestrator(config, codebase);
 
-    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini", capabilities: [] });
-    const tester = new GeminiAgent({ id: "tester-001", role: "tester", model: "gemini", capabilities: [] });
-    const debugAgent = new GeminiAgent({ id: "debugger-001", role: "debugger", model: "gemini", capabilities: [] });
-    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini", capabilities: [] });
+    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini-2.5-flash", capabilities: [] });
+    const tester = new GeminiAgent({ id: "tester-001", role: "tester", model: "gemini-2.5-flash", capabilities: [] });
+    const debugAgent = new GeminiAgent({ id: "debugger-001", role: "debugger", model: "gemini-2.5-flash", capabilities: [] });
+    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini-2.5-flash", capabilities: [] });
 
     vi.spyOn(architect, "invoke").mockImplementation(async (msg: AgentMessage): Promise<AgentResponse> => ({
       message_id: "arch-1",
@@ -291,8 +291,8 @@ describe("Swarm Non-Happy-Path Orchestration", () => {
     const config = buildConfig();
     const orchestrator = new Orchestrator(config, codebase);
 
-    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini", capabilities: [] });
-    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini", capabilities: [] });
+    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini-2.5-flash", capabilities: [] });
+    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini-2.5-flash", capabilities: [] });
 
     // Mock Architect:
     // First call: Decomposes goal into builder write
@@ -369,8 +369,8 @@ describe("Swarm Non-Happy-Path Orchestration", () => {
     const config = buildConfig(0.5, 0.95);
     const orchestrator = new Orchestrator(config, codebase);
 
-    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini", capabilities: [] });
-    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini", capabilities: [] });
+    const architect = new GeminiAgent({ id: "architect-001", role: "architect", model: "gemini-2.5-flash", capabilities: [] });
+    const builder = new GeminiAgent({ id: "builder-001", role: "builder", model: "gemini-2.5-flash", capabilities: [] });
 
     vi.spyOn(architect, "invoke").mockImplementation(async (msg: AgentMessage): Promise<AgentResponse> => ({
       message_id: "arch-1",

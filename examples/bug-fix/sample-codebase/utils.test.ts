@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildDigest } from "./api";
-import { formatPreview, takeFirst } from "./utils";
+import { buildDigest } from "./api.js";
+import { formatPreview, takeFirst } from "./utils.js";
 
 describe("takeFirst", () => {
   it("returns the requested number of items", () => {

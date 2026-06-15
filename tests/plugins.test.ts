@@ -75,8 +75,8 @@ describe("Harris Swarm Plugin System", () => {
     // Check if the plugin agent is registered in the orchestrator
     const registeredAgent = (harris.orchestrator as unknown as OrchestratorWithAgents).agents.get("custom-builder-002");
     expect(registeredAgent).toBeDefined();
-    expect(registeredAgent.identity.id).toBe("custom-builder-002");
-    expect(registeredAgent.identity.role).toBe("builder");
+    expect(registeredAgent?.identity.id).toBe("custom-builder-002");
+    expect(registeredAgent?.identity.role).toBe("builder");
   });
 
   it("should load custom prompts from plugins", () => {
