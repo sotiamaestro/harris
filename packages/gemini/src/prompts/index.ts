@@ -7,3 +7,4 @@ export * from "./reviewer.js";
 export * from "./tester.js";
 export * from "./debugger.js";
 export * from "./release.js";
+export * from "./personality.js";

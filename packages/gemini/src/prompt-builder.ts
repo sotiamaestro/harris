@@ -8,6 +8,7 @@ import { REVIEWER_PROMPT } from "./prompts/reviewer.js";
 import { TESTER_PROMPT } from "./prompts/tester.js";
 import { DEBUGGER_PROMPT } from "./prompts/debugger.js";
 import { RELEASE_PROMPT } from "./prompts/release.js";
+import { buildPersonalitySection } from "./prompts/personality.js";
 
 const ROLE_PROMPTS = {
   architect: ARCHITECT_PROMPT,
@@ -36,6 +37,11 @@ export function buildSystemPrompt(
   const rolePrompt = ROLE_PROMPTS[config.role];
   if (rolePrompt) {
     prompt += `\n\n=== ROLE SPECIFICATION ===\n\n${rolePrompt}`;
+  }
+
+  const personalitySection = buildPersonalitySection(config);
+  if (personalitySection) {
+    prompt += `\n\n${personalitySection}`;
   }
 
   const globalRegistry = globalThis as Record<string | symbol, unknown>;
