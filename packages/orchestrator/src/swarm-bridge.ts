@@ -180,7 +180,7 @@ export class SwarmBridge {
 
   private flattenFiles(tree: FileTree): string[] {
     if (tree.type === "file") {
-      return [tree.path];
+      return [tree.path.replace(/\\/g, "/")];
     }
 
     return tree.children?.flatMap((child) => this.flattenFiles(child)) ?? [];

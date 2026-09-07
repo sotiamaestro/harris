@@ -542,10 +542,11 @@ export class Orchestrator {
     const grouped = new Map<string, string[]>();
 
     for (const file of files) {
-      const parts = file.split("/");
+      const normalizedFile = file.replace(/\\/g, "/");
+      const parts = normalizedFile.split("/");
       const module = parts.length > 1 ? parts.slice(0, -1).join("/") : ".";
       const group = grouped.get(module) ?? [];
-      group.push(file);
+      group.push(normalizedFile);
       grouped.set(module, group);
     }
 

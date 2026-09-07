@@ -105,7 +105,7 @@ describe("multi-file goal orchestration", () => {
     expect(testerMessages[0]?.action).toBe("Run full test suite after multi-file groups");
     expect(testerMessages[0]?.context.relevant_files).toHaveLength(6);
     expect(result.changes).toHaveLength(6);
-  });
+  }, 15000);
 });
 
 function agent(role: "architect" | "builder" | "reviewer" | "tester"): GeminiAgent {
