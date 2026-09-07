@@ -79,12 +79,44 @@ export function mergeConfig(
       ...fileConfig.convergence,
       ...overrideConfig.convergence,
     },
-    agents: {
-      ...fileConfig.agents,
-      ...overrideConfig.agents,
-    },
+    agents: mergeAgentOverrides(fileConfig.agents, overrideConfig.agents),
     visualizer: overrideConfig.visualizer ?? fileConfig.visualizer,
   };
+}
+
+type AgentOverrides = NonNullable<NormalizedHarrisConfig["agents"]>;
+
+/**
+ * Merges agent overrides role by role so that a value set in `.harris.yml` is
+ * not dropped just because the caller overrode a different field of the same
+ * agent. `personality` is merged trait by trait for the same reason.
+ */
+function mergeAgentOverrides(
+  fileAgents: AgentOverrides = {},
+  overrideAgents: AgentOverrides = {},
+): AgentOverrides {
+  const roles = new Set([
+    ...Object.keys(fileAgents),
+    ...Object.keys(overrideAgents),
+  ]) as Set<AgentRole>;
+
+  const merged: AgentOverrides = {};
+  for (const role of roles) {
+    const fromFile = fileAgents[role];
+    const fromOverride = overrideAgents[role];
+    const entry = { ...fromFile, ...fromOverride };
+
+    if (fromFile?.personality || fromOverride?.personality) {
+      entry.personality = {
+        ...fromFile?.personality,
+        ...fromOverride?.personality,
+      };
+    }
+
+    merged[role] = entry;
+  }
+
+  return merged;
 }
 
 function normalizeConvergence(

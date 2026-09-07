@@ -285,8 +285,53 @@ const harris = await createHarris({
     max_total_invocations: 50,   // cap on total agent calls
     loop_detection_window: 5,    // check last N messages for loops
   },
+
+  agents: {
+    reviewer: {
+      personality: { strictness: 9 }, // see "Personality traits" below
+    },
+  },
 });
 ```
+
+### Personality traits
+
+Each agent can be tuned with behavioural traits scored `1-10`, where `5` is
+neutral. Traits are injected into the agent's system prompt as modifiers on top
+of its role specification — they change *how* an agent works, never *what* it is
+responsible for.
+
+| Trait | Applies to | What it controls |
+| -- | -- | -- |
+| `strictness` | Reviewer | How many issues trigger a rejection |
+| `verbosity` | all agents | How detailed responses are |
+| `creativity` | Architect | How novel the decomposition approach is |
+| `caution` | Builder | How defensive the code style is |
+
+Traits can also be set per agent in `.harris.yml`:
+
+```yaml
+agents:
+  reviewer:
+    personality:
+      strictness: 9   # reject on ANY issue, zero tolerance
+      verbosity: 2    # ...but report it tersely
+  architect:
+    personality:
+      creativity: 10  # actively seek novel decompositions
+  builder:
+    personality:
+      caution: 8      # validate inputs and error paths explicitly
+```
+
+Notes:
+
+- Omitting `personality`, or leaving a trait at `5`, reproduces the stock role
+  behaviour exactly — the generated prompt is byte-for-byte identical.
+- A trait set on an agent it does not apply to is ignored (a strict Analyst is
+  just an Analyst).
+- Values outside `1-10` are clamped and fractional values are rounded, so a
+  typo in `.harris.yml` degrades gracefully instead of failing the run.
 
 ---
 
